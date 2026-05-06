@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { FiPlus, FiCalendar, FiUser, FiFlag, FiEdit2, FiTrash2, FiZap, FiFileText } from 'react-icons/fi';
+import { FiPlus, FiCalendar, FiUser, FiFlag, FiTrash2, FiZap, FiFileText, FiLoader } from 'react-icons/fi';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
+import AILoading from '../components/AILoading';
+import SkeletonLoader from '../components/SkeletonLoader';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -26,10 +28,17 @@ const ProjectDetails = () => {
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiSummary, setAiSummary] = useState('');
   const [loading, setLoading] = useState(true);
+  
+  // AI Loading States
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiLoadingType, setAiLoadingType] = useState('suggestions');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   useEffect(() => {
-    fetchProject();
-    fetchTasks();
+    if (id) {
+      fetchProject();
+      fetchTasks();
+    }
   }, [id]);
 
   const fetchProject = async () => {
@@ -39,6 +48,7 @@ const ProjectDetails = () => {
     } catch (error) {
       console.error('Failed to fetch project:', error);
       toast.error('Failed to load project');
+      navigate('/projects');
     }
   };
 
@@ -54,33 +64,91 @@ const ProjectDetails = () => {
   };
 
   const fetchAISuggestions = async () => {
+    setIsAiLoading(true);
+    setAiLoadingType('suggestions');
+    setShowAIModal(true);
+    
+    // Show loading toast
+    toast.loading('🤖 AI is thinking... Generating smart task suggestions', {
+      id: 'ai-suggest',
+      duration: Infinity
+    });
+    
     try {
       const response = await axios.get(`${API_URL}/ai/suggestions/${id}`);
       setAiSuggestions(response.data.suggestions);
-      setShowAIModal(true);
+      
+      // Success toast
+      toast.success(`✨ Generated ${response.data.suggestions.length} AI suggestions!`, {
+        id: 'ai-suggest',
+        duration: 3000
+      });
     } catch (error) {
-      toast.error('Failed to get AI suggestions');
+      console.error('AI error:', error);
+      toast.error('Failed to get AI suggestions. Please check your OpenRouter API key.', {
+        id: 'ai-suggest',
+        duration: 4000
+      });
+      setShowAIModal(false);
+    } finally {
+      setIsAiLoading(false);
     }
   };
 
   const fetchAISummary = async () => {
+    setIsGeneratingSummary(true);
+    
+    // Show loading toast with custom message
+    toast.loading('📊 AI is analyzing your project data...', {
+      id: 'ai-summary',
+      duration: Infinity
+    });
+    
     try {
       const response = await axios.get(`${API_URL}/ai/summary/${id}`);
       setAiSummary(response.data.summary);
-      toast.success('AI summary generated!');
+      
+      // Success with confetti effect
+      toast.success('🎉 AI Summary generated successfully!', {
+        id: 'ai-summary',
+        duration: 3000
+      });
+      
+      // Scroll to summary
+      setTimeout(() => {
+        const summaryElement = document.getElementById('ai-summary-section');
+        if (summaryElement) {
+          summaryElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
     } catch (error) {
-      toast.error('Failed to generate summary');
+      console.error('AI error:', error);
+      toast.error('Failed to generate summary. Please check your OpenRouter API key.', {
+        id: 'ai-summary',
+        duration: 4000
+      });
+    } finally {
+      setIsGeneratingSummary(false);
     }
   };
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
+    if (!newTask.assignedTo) {
+      toast.error('Please assign a team member');
+      return;
+    }
+    if (!newTask.dueDate) {
+      toast.error('Please set a due date');
+      return;
+    }
     try {
+      toast.loading('Creating task...', { id: 'create-task' });
       await axios.post(`${API_URL}/tasks`, {
         ...newTask,
         projectId: id
       });
-      toast.success('Task created successfully!');
+      toast.success('Task created successfully!', { id: 'create-task' });
       setShowTaskModal(false);
       setNewTask({
         title: '',
@@ -91,7 +159,8 @@ const ProjectDetails = () => {
       });
       fetchTasks();
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to create task');
+      console.error('Create error:', error);
+      toast.error(error.response?.data?.message || 'Failed to create task', { id: 'create-task' });
     }
   };
 
@@ -101,6 +170,7 @@ const ProjectDetails = () => {
       toast.success('Task updated!');
       fetchTasks();
     } catch (error) {
+      console.error('Update error:', error);
       toast.error('Failed to update task');
     }
   };
@@ -112,6 +182,7 @@ const ProjectDetails = () => {
         toast.success('Task deleted!');
         fetchTasks();
       } catch (error) {
+        console.error('Delete error:', error);
         toast.error('Failed to delete task');
       }
     }
@@ -127,7 +198,14 @@ const ProjectDetails = () => {
     return colors[priority] || '#718096';
   };
 
-  if (loading) return <div className="container">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="container">
+        <SkeletonLoader type="card" />
+      </div>
+    );
+  }
+  
   if (!project) return <div className="container">Project not found</div>;
 
   const isAdmin = user.role === 'admin' || project.admin?._id === user._id;
@@ -143,17 +221,33 @@ const ProjectDetails = () => {
             color: 'white',
             cursor: 'pointer',
             marginBottom: '20px',
-            fontSize: '14px'
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px'
           }}
         >
           ← Back to Projects
         </button>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ color: 'white', marginBottom: '10px' }}>{project.name}</h1>
             <p style={{ color: 'rgba(255,255,255,0.9)' }}>{project.description || 'No description provided'}</p>
+            <div style={{ marginTop: '10px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              {project.members?.map(member => (
+                <span key={member._id} style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  padding: '4px 12px',
+                  borderRadius: '20px',
+                  fontSize: '12px',
+                  color: 'white'
+                }}>
+                  {member.name}
+                </span>
+              ))}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button
               className="btn btn-primary"
               onClick={() => setShowTaskModal(true)}
@@ -164,62 +258,143 @@ const ProjectDetails = () => {
             <button
               className="btn"
               onClick={fetchAISuggestions}
-              style={{ background: '#7c3aed', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}
+              disabled={isAiLoading}
+              style={{
+                background: '#7c3aed',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: isAiLoading ? 0.7 : 1,
+                cursor: isAiLoading ? 'not-allowed' : 'pointer'
+              }}
             >
-              <FiZap /> AI Suggestions
+              {isAiLoading ? <FiLoader className="rotate" /> : <FiZap />}
+              {isAiLoading ? 'Generating...' : 'AI Suggestions'}
             </button>
             <button
               className="btn"
               onClick={fetchAISummary}
-              style={{ background: '#10b981', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}
+              disabled={isGeneratingSummary}
+              style={{
+                background: '#10b981',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                opacity: isGeneratingSummary ? 0.7 : 1,
+                cursor: isGeneratingSummary ? 'not-allowed' : 'pointer'
+              }}
             >
-              <FiFileText /> AI Summary
+              {isGeneratingSummary ? <FiLoader className="rotate" /> : <FiFileText />}
+              {isGeneratingSummary ? 'Analyzing...' : 'AI Summary'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* AI Summary Display */}
+      {/* AI Summary Display with Animation */}
       {aiSummary && (
-        <div className="card" style={{ marginBottom: '20px', background: '#f0fdf4', borderLeft: '4px solid #10b981' }}>
-          <h3 style={{ marginBottom: '10px' }}>🤖 AI Project Summary</h3>
-          <p>{aiSummary}</p>
-        </div>
+        <motion.div
+          id="ai-summary-section"
+          initial={{ opacity: 0, y: -20, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="card"
+          style={{
+            marginBottom: '20px',
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+            borderLeft: '4px solid #10b981',
+            position: 'relative',
+            overflow: 'hidden'
+          }}
+        >
+          <motion.div
+            initial={{ x: '-100%' }}
+            animate={{ x: '100%' }}
+            transition={{ duration: 1, delay: 0.5 }}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
+              pointerEvents: 'none'
+            }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+            <span style={{ fontSize: '24px' }}>🤖</span>
+            <h3 style={{ margin: 0 }}>AI Project Summary</h3>
+            <motion.span
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 1, repeat: Infinity }}
+              style={{ fontSize: '12px', background: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '20px' }}
+            >
+              AI Generated
+            </motion.span>
+          </div>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            style={{ lineHeight: '1.6', color: '#065f46' }}
+          >
+            {aiSummary}
+          </motion.p>
+          <button
+            onClick={() => setAiSummary('')}
+            style={{
+              marginTop: '15px',
+              background: 'none',
+              border: 'none',
+              color: '#718096',
+              cursor: 'pointer',
+              fontSize: '12px',
+              textDecoration: 'underline'
+            }}
+          >
+            Dismiss
+          </button>
+        </motion.div>
       )}
 
       {/* Task Board */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
         gap: '20px'
       }}>
         {/* Todo Column */}
         <div className="card" style={{ background: '#f8fafc' }}>
-          <h3 style={{ marginBottom: '15px', color: '#ef4444' }}>To Do</h3>
-          <div style={{ minHeight: '200px' }}>
+          <h3 style={{ marginBottom: '15px', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📋</span> To Do ({tasks.filter(t => t.status === 'todo').length})
+          </h3>
+          <div style={{ minHeight: '200px', maxHeight: '600px', overflowY: 'auto' }}>
             {tasks.filter(t => t.status === 'todo').map(task => (
               <div key={task._id} style={{
                 background: 'white',
                 padding: '12px',
                 borderRadius: '8px',
                 marginBottom: '10px',
-                border: '1px solid #e2e8f0'
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                  <strong>{task.title}</strong>
+                  <strong style={{ fontSize: '14px' }}>{task.title}</strong>
                   {isAdmin && (
-                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                      <FiTrash2 size={16} />
+                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                      <FiTrash2 size={14} />
                     </button>
                   )}
                 </div>
-                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description}</p>
-                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', marginBottom: '8px' }}>
-                  <span><FiUser size={12} /> {task.assignedTo?.name}</span>
-                  <span><FiCalendar size={12} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
-                  <span><FiFlag size={12} color={getPriorityColor(task.priority)} /> {task.priority}</span>
+                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description?.substring(0, 100)}</p>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiUser size={11} /> {task.assignedTo?.name}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiFlag size={11} color={getPriorityColor(task.priority)} /> {task.priority}</span>
                 </div>
-                {isAdmin || task.assignedTo?._id === user?._id ? (
+                {(isAdmin || task.assignedTo?._id === user?._id) ? (
                   <select
                     value={task.status}
                     onChange={(e) => handleUpdateTaskStatus(task._id, e.target.value)}
@@ -228,48 +403,56 @@ const ProjectDetails = () => {
                       padding: '6px',
                       fontSize: '12px',
                       borderRadius: '4px',
-                      border: '1px solid #e2e8f0'
+                      border: '1px solid #e2e8f0',
+                      background: 'white',
+                      cursor: 'pointer'
                     }}
                   >
-                    <option value="todo">To Do</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="done">Done</option>
+                    <option value="todo">📋 To Do</option>
+                    <option value="in_progress">⚙️ In Progress</option>
+                    <option value="done">✅ Done</option>
                   </select>
                 ) : (
                   <span style={{ fontSize: '12px', color: '#718096' }}>Status: To Do</span>
                 )}
               </div>
             ))}
+            {tasks.filter(t => t.status === 'todo').length === 0 && (
+              <p style={{ textAlign: 'center', color: '#718096', padding: '20px' }}>No tasks in To Do</p>
+            )}
           </div>
         </div>
 
         {/* In Progress Column */}
         <div className="card" style={{ background: '#f8fafc' }}>
-          <h3 style={{ marginBottom: '15px', color: '#f59e0b' }}>In Progress</h3>
-          <div style={{ minHeight: '200px' }}>
+          <h3 style={{ marginBottom: '15px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>⚙️</span> In Progress ({tasks.filter(t => t.status === 'in_progress').length})
+          </h3>
+          <div style={{ minHeight: '200px', maxHeight: '600px', overflowY: 'auto' }}>
             {tasks.filter(t => t.status === 'in_progress').map(task => (
               <div key={task._id} style={{
                 background: 'white',
                 padding: '12px',
                 borderRadius: '8px',
                 marginBottom: '10px',
-                border: '1px solid #e2e8f0'
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                  <strong>{task.title}</strong>
+                  <strong style={{ fontSize: '14px' }}>{task.title}</strong>
                   {isAdmin && (
-                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                      <FiTrash2 size={16} />
+                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                      <FiTrash2 size={14} />
                     </button>
                   )}
                 </div>
-                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description}</p>
-                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', marginBottom: '8px' }}>
-                  <span><FiUser size={12} /> {task.assignedTo?.name}</span>
-                  <span><FiCalendar size={12} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
-                  <span><FiFlag size={12} color={getPriorityColor(task.priority)} /> {task.priority}</span>
+                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description?.substring(0, 100)}</p>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', marginBottom: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiUser size={11} /> {task.assignedTo?.name}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiFlag size={11} color={getPriorityColor(task.priority)} /> {task.priority}</span>
                 </div>
-                {isAdmin || task.assignedTo?._id === user?._id ? (
+                {(isAdmin || task.assignedTo?._id === user?._id) ? (
                   <select
                     value={task.status}
                     onChange={(e) => handleUpdateTaskStatus(task._id, e.target.value)}
@@ -278,25 +461,32 @@ const ProjectDetails = () => {
                       padding: '6px',
                       fontSize: '12px',
                       borderRadius: '4px',
-                      border: '1px solid #e2e8f0'
+                      border: '1px solid #e2e8f0',
+                      background: 'white',
+                      cursor: 'pointer'
                     }}
                   >
-                    <option value="todo">To Do</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="done">Done</option>
+                    <option value="todo">📋 To Do</option>
+                    <option value="in_progress">⚙️ In Progress</option>
+                    <option value="done">✅ Done</option>
                   </select>
                 ) : (
                   <span style={{ fontSize: '12px', color: '#718096' }}>Status: In Progress</span>
                 )}
               </div>
             ))}
+            {tasks.filter(t => t.status === 'in_progress').length === 0 && (
+              <p style={{ textAlign: 'center', color: '#718096', padding: '20px' }}>No tasks in progress</p>
+            )}
           </div>
         </div>
 
         {/* Done Column */}
         <div className="card" style={{ background: '#f8fafc' }}>
-          <h3 style={{ marginBottom: '15px', color: '#10b981' }}>Done</h3>
-          <div style={{ minHeight: '200px' }}>
+          <h3 style={{ marginBottom: '15px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>✅</span> Done ({tasks.filter(t => t.status === 'done').length})
+          </h3>
+          <div style={{ minHeight: '200px', maxHeight: '600px', overflowY: 'auto' }}>
             {tasks.filter(t => t.status === 'done').map(task => (
               <div key={task._id} style={{
                 background: 'white',
@@ -307,20 +497,23 @@ const ProjectDetails = () => {
                 opacity: 0.8
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                  <strong><s>{task.title}</s></strong>
+                  <strong style={{ fontSize: '14px', textDecoration: 'line-through' }}>{task.title}</strong>
                   {isAdmin && (
-                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>
-                      <FiTrash2 size={16} />
+                    <button onClick={() => handleDeleteTask(task._id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                      <FiTrash2 size={14} />
                     </button>
                   )}
                 </div>
-                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description}</p>
-                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096' }}>
-                  <span><FiUser size={12} /> {task.assignedTo?.name}</span>
-                  <span><FiCalendar size={12} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description?.substring(0, 100)}</p>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiUser size={11} /> {task.assignedTo?.name}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
                 </div>
               </div>
             ))}
+            {tasks.filter(t => t.status === 'done').length === 0 && (
+              <p style={{ textAlign: 'center', color: '#718096', padding: '20px' }}>No completed tasks</p>
+            )}
           </div>
         </div>
       </div>
@@ -343,7 +536,7 @@ const ProjectDetails = () => {
             <h2 style={{ marginBottom: '20px' }}>Create New Task</h2>
             <form onSubmit={handleCreateTask}>
               <div className="form-group">
-                <label>Title</label>
+                <label>Title *</label>
                 <input
                   type="text"
                   placeholder="Task title"
@@ -362,7 +555,7 @@ const ProjectDetails = () => {
                 />
               </div>
               <div className="form-group">
-                <label>Assign To</label>
+                <label>Assign To *</label>
                 <select
                   value={newTask.assignedTo}
                   onChange={(e) => setNewTask({ ...newTask, assignedTo: e.target.value })}
@@ -375,7 +568,7 @@ const ProjectDetails = () => {
                 </select>
               </div>
               <div className="form-group">
-                <label>Due Date</label>
+                <label>Due Date *</label>
                 <input
                   type="date"
                   value={newTask.dueDate}
@@ -404,7 +597,7 @@ const ProjectDetails = () => {
         </div>
       )}
 
-      {/* AI Suggestions Modal */}
+      {/* AI Suggestions Modal with Loading */}
       {showAIModal && (
         <div style={{
           position: 'fixed',
@@ -412,37 +605,98 @@ const ProjectDetails = () => {
           left: 0,
           right: 0,
           bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(5px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           zIndex: 1000
-        }} onClick={() => setShowAIModal(false)}>
-          <div className="card" style={{ maxWidth: '600px', width: '90%', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '20px' }}>🤖 AI Task Suggestions</h2>
-            {aiSuggestions.map((suggestion, index) => (
-              <div key={index} style={{
-                padding: '15px',
-                border: '1px solid #e2e8f0',
-                borderRadius: '8px',
-                marginBottom: '15px'
-              }}>
-                <h3>{suggestion.title}</h3>
-                <p style={{ color: '#718096', marginTop: '8px' }}>{suggestion.description}</p>
-                {suggestion.estimatedHours && (
-                  <p style={{ fontSize: '12px', color: '#667eea', marginTop: '8px' }}>
-                    Estimated: {suggestion.estimatedHours} hours
-                  </p>
+        }} onClick={() => !isAiLoading && setShowAIModal(false)}>
+          <div className="card" style={{ 
+            maxWidth: '650px', 
+            width: '90%', 
+            maxHeight: '80vh', 
+            overflow: 'auto',
+            padding: isAiLoading ? '0' : '30px'
+          }} onClick={(e) => e.stopPropagation()}>
+            {isAiLoading ? (
+              <AILoading type="suggestions" />
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span>🤖</span> AI Task Suggestions
+                  </h2>
+                  <button
+                    onClick={() => setShowAIModal(false)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '24px',
+                      cursor: 'pointer',
+                      color: '#718096'
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                
+                {aiSuggestions.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#718096' }}>
+                    <p>No suggestions available.</p>
+                    <p style={{ fontSize: '12px', marginTop: '10px' }}>Make sure your OpenRouter API key is configured.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ marginBottom: '20px', color: '#718096', fontSize: '14px' }}>
+                      Here are AI-generated task suggestions based on your project:
+                    </p>
+                    {aiSuggestions.map((suggestion, index) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                        style={{
+                          padding: '15px',
+                          background: '#f8fafc',
+                          borderRadius: '12px',
+                          marginBottom: '15px',
+                          border: '1px solid #e2e8f0'
+                        }}
+                      >
+                        <h3 style={{ fontSize: '16px', marginBottom: '8px', color: '#2d3748' }}>
+                          {index + 1}. {suggestion.title}
+                        </h3>
+                        <p style={{ color: '#718096', fontSize: '14px', marginBottom: '8px' }}>
+                          {suggestion.description}
+                        </p>
+                        {suggestion.estimatedHours && (
+                          <div style={{
+                            display: 'inline-block',
+                            padding: '4px 12px',
+                            background: '#e0e7ff',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            color: '#667eea'
+                          }}>
+                            ⏱️ Estimated: {suggestion.estimatedHours} hours
+                          </div>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
                 )}
-              </div>
-            ))}
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowAIModal(false)}
-              style={{ width: '100%' }}
-            >
-              Close
-            </button>
+                
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setShowAIModal(false)}
+                  style={{ width: '100%', marginTop: '20px' }}
+                >
+                  Close
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
