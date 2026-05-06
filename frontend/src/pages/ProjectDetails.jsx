@@ -5,10 +5,106 @@ import { useAuth } from '../context/AuthContext';
 import { FiPlus, FiCalendar, FiUser, FiFlag, FiTrash2, FiZap, FiFileText, FiLoader } from 'react-icons/fi';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
-import AILoading from '../components/AILoading';
-import SkeletonLoader from '../components/SkeletonLoader';
+import { motion } from 'framer-motion';  // ← ADD THIS IMPORT
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// Simple loading component inline (no external dependency)
+const SimpleAILoading = ({ type = 'suggestions' }) => {
+  const messages = {
+    suggestions: [
+      '🤖 Analyzing your project requirements...',
+      '🧠 Generating intelligent task suggestions...',
+      '⚡ Applying AI algorithms...',
+      '📊 Creating optimized task list...',
+      '✨ Almost there! Crafting smart recommendations...'
+    ],
+    summary: [
+      '📝 Reading project data...',
+      '🔍 Analyzing task patterns...',
+      '📊 Generating insights...',
+      '✍️ Writing comprehensive summary...',
+      '🎯 Finalizing AI analysis...'
+    ]
+  };
+
+  const currentMessages = messages[type] || messages.suggestions;
+  const [messageIndex, setMessageIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setMessageIndex((prev) => (prev + 1) % currentMessages.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [currentMessages.length]);
+
+  return (
+    <div style={{
+      textAlign: 'center',
+      padding: '40px',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      borderRadius: '20px',
+      color: 'white'
+    }}>
+      <div style={{
+        fontSize: '60px',
+        marginBottom: '20px',
+        animation: 'bounce 1s infinite'
+      }}>
+        🧠
+      </div>
+      <div style={{
+        width: '60px',
+        height: '60px',
+        margin: '0 auto 20px',
+        border: '4px solid rgba(255,255,255,0.2)',
+        borderTop: '4px solid white',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite'
+      }} />
+      <div style={{
+        fontSize: '18px',
+        fontWeight: '500',
+        marginBottom: '10px'
+      }}>
+        {currentMessages[messageIndex]}
+      </div>
+      <div style={{
+        width: '80%',
+        height: '4px',
+        background: 'rgba(255,255,255,0.2)',
+        borderRadius: '2px',
+        margin: '20px auto 0',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          width: '50%',
+          height: '100%',
+          background: 'white',
+          borderRadius: '2px',
+          animation: 'slide 1.5s infinite'
+        }} />
+      </div>
+      <p style={{ fontSize: '14px', opacity: 0.8, marginTop: '20px' }}>
+        Using GPT-3.5 Turbo • Please wait...
+      </p>
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes slide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(200%); }
+        }
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 const ProjectDetails = () => {
   const { id } = useParams();
@@ -28,10 +124,7 @@ const ProjectDetails = () => {
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiSummary, setAiSummary] = useState('');
   const [loading, setLoading] = useState(true);
-  
-  // AI Loading States
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [aiLoadingType, setAiLoadingType] = useState('suggestions');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   useEffect(() => {
@@ -43,7 +136,10 @@ const ProjectDetails = () => {
 
   const fetchProject = async () => {
     try {
-      const response = await axios.get(`${API_URL}/projects/${id}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/projects/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setProject(response.data.project);
     } catch (error) {
       console.error('Failed to fetch project:', error);
@@ -54,7 +150,10 @@ const ProjectDetails = () => {
 
   const fetchTasks = async () => {
     try {
-      const response = await axios.get(`${API_URL}/tasks/project/${id}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/tasks/project/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setTasks(response.data.tasks);
     } catch (error) {
       console.error('Failed to fetch tasks:', error);
@@ -65,20 +164,20 @@ const ProjectDetails = () => {
 
   const fetchAISuggestions = async () => {
     setIsAiLoading(true);
-    setAiLoadingType('suggestions');
     setShowAIModal(true);
     
-    // Show loading toast
     toast.loading('🤖 AI is thinking... Generating smart task suggestions', {
       id: 'ai-suggest',
       duration: Infinity
     });
     
     try {
-      const response = await axios.get(`${API_URL}/ai/suggestions/${id}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/ai/suggestions/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setAiSuggestions(response.data.suggestions);
       
-      // Success toast
       toast.success(`✨ Generated ${response.data.suggestions.length} AI suggestions!`, {
         id: 'ai-suggest',
         duration: 3000
@@ -98,23 +197,23 @@ const ProjectDetails = () => {
   const fetchAISummary = async () => {
     setIsGeneratingSummary(true);
     
-    // Show loading toast with custom message
     toast.loading('📊 AI is analyzing your project data...', {
       id: 'ai-summary',
       duration: Infinity
     });
     
     try {
-      const response = await axios.get(`${API_URL}/ai/summary/${id}`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/ai/summary/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setAiSummary(response.data.summary);
       
-      // Success with confetti effect
       toast.success('🎉 AI Summary generated successfully!', {
         id: 'ai-summary',
         duration: 3000
       });
       
-      // Scroll to summary
       setTimeout(() => {
         const summaryElement = document.getElementById('ai-summary-section');
         if (summaryElement) {
@@ -143,10 +242,13 @@ const ProjectDetails = () => {
       return;
     }
     try {
+      const token = localStorage.getItem('token');
       toast.loading('Creating task...', { id: 'create-task' });
       await axios.post(`${API_URL}/tasks`, {
         ...newTask,
         projectId: id
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       toast.success('Task created successfully!', { id: 'create-task' });
       setShowTaskModal(false);
@@ -166,7 +268,10 @@ const ProjectDetails = () => {
 
   const handleUpdateTaskStatus = async (taskId, newStatus) => {
     try {
-      await axios.put(`${API_URL}/tasks/${taskId}`, { status: newStatus });
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/tasks/${taskId}`, { status: newStatus }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       toast.success('Task updated!');
       fetchTasks();
     } catch (error) {
@@ -178,7 +283,10 @@ const ProjectDetails = () => {
   const handleDeleteTask = async (taskId) => {
     if (window.confirm('Are you sure you want to delete this task?')) {
       try {
-        await axios.delete(`${API_URL}/tasks/${taskId}`);
+        const token = localStorage.getItem('token');
+        await axios.delete(`${API_URL}/tasks/${taskId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         toast.success('Task deleted!');
         fetchTasks();
       } catch (error) {
@@ -200,15 +308,16 @@ const ProjectDetails = () => {
 
   if (loading) {
     return (
-      <div className="container">
-        <SkeletonLoader type="card" />
+      <div className="container" style={{ textAlign: 'center', padding: '50px' }}>
+        <div className="spinner"></div>
+        <p>Loading project...</p>
       </div>
     );
   }
   
   if (!project) return <div className="container">Project not found</div>;
 
-  const isAdmin = user.role === 'admin' || project.admin?._id === user._id;
+  const isAdmin = user?.role === 'admin' || project.admin?._id === user?._id;
 
   return (
     <div className="container fade-in">
@@ -269,7 +378,7 @@ const ProjectDetails = () => {
                 cursor: isAiLoading ? 'not-allowed' : 'pointer'
               }}
             >
-              {isAiLoading ? <FiLoader className="rotate" /> : <FiZap />}
+              {isAiLoading ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⚡</span> : <FiZap />}
               {isAiLoading ? 'Generating...' : 'AI Suggestions'}
             </button>
             <button
@@ -286,20 +395,17 @@ const ProjectDetails = () => {
                 cursor: isGeneratingSummary ? 'not-allowed' : 'pointer'
               }}
             >
-              {isGeneratingSummary ? <FiLoader className="rotate" /> : <FiFileText />}
+              {isGeneratingSummary ? <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>📊</span> : <FiFileText />}
               {isGeneratingSummary ? 'Analyzing...' : 'AI Summary'}
             </button>
           </div>
         </div>
       </div>
 
-      {/* AI Summary Display with Animation */}
+      {/* AI Summary Display */}
       {aiSummary && (
-        <motion.div
+        <div
           id="ai-summary-section"
-          initial={{ opacity: 0, y: -20, scale: 0.95 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.5 }}
           className="card"
           style={{
             marginBottom: '20px',
@@ -309,39 +415,16 @@ const ProjectDetails = () => {
             overflow: 'hidden'
           }}
         >
-          <motion.div
-            initial={{ x: '-100%' }}
-            animate={{ x: '100%' }}
-            transition={{ duration: 1, delay: 0.5 }}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-              pointerEvents: 'none'
-            }}
-          />
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
             <span style={{ fontSize: '24px' }}>🤖</span>
             <h3 style={{ margin: 0 }}>AI Project Summary</h3>
-            <motion.span
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ duration: 1, repeat: Infinity }}
-              style={{ fontSize: '12px', background: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '20px' }}
-            >
+            <span style={{ fontSize: '12px', background: '#10b981', color: 'white', padding: '2px 8px', borderRadius: '20px' }}>
               AI Generated
-            </motion.span>
+            </span>
           </div>
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            style={{ lineHeight: '1.6', color: '#065f46' }}
-          >
+          <p style={{ lineHeight: '1.6', color: '#065f46' }}>
             {aiSummary}
-          </motion.p>
+          </p>
           <button
             onClick={() => setAiSummary('')}
             style={{
@@ -356,7 +439,7 @@ const ProjectDetails = () => {
           >
             Dismiss
           </button>
-        </motion.div>
+        </div>
       )}
 
       {/* Task Board */}
@@ -438,6 +521,7 @@ const ProjectDetails = () => {
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
               }}>
+                {/* Same structure as todo */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                   <strong style={{ fontSize: '14px' }}>{task.title}</strong>
                   {isAdmin && (
@@ -448,23 +532,15 @@ const ProjectDetails = () => {
                 </div>
                 <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description?.substring(0, 100)}</p>
                 <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', marginBottom: '8px', flexWrap: 'wrap' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiUser size={11} /> {task.assignedTo?.name}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiFlag size={11} color={getPriorityColor(task.priority)} /> {task.priority}</span>
+                  <span><FiUser size={11} /> {task.assignedTo?.name}</span>
+                  <span><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                  <span><FiFlag size={11} color={getPriorityColor(task.priority)} /> {task.priority}</span>
                 </div>
                 {(isAdmin || task.assignedTo?._id === user?._id) ? (
                   <select
                     value={task.status}
                     onChange={(e) => handleUpdateTaskStatus(task._id, e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px',
-                      fontSize: '12px',
-                      borderRadius: '4px',
-                      border: '1px solid #e2e8f0',
-                      background: 'white',
-                      cursor: 'pointer'
-                    }}
+                    style={{ width: '100%', padding: '6px', fontSize: '12px', borderRadius: '4px', border: '1px solid #e2e8f0' }}
                   >
                     <option value="todo">📋 To Do</option>
                     <option value="in_progress">⚙️ In Progress</option>
@@ -505,9 +581,9 @@ const ProjectDetails = () => {
                   )}
                 </div>
                 <p style={{ fontSize: '12px', color: '#718096', marginBottom: '8px' }}>{task.description?.substring(0, 100)}</p>
-                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096', flexWrap: 'wrap' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiUser size={11} /> {task.assignedTo?.name}</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096' }}>
+                  <span><FiUser size={11} /> {task.assignedTo?.name}</span>
+                  <span><FiCalendar size={11} /> {format(new Date(task.dueDate), 'MMM dd')}</span>
                 </div>
               </div>
             ))}
@@ -597,7 +673,7 @@ const ProjectDetails = () => {
         </div>
       )}
 
-      {/* AI Suggestions Modal with Loading */}
+      {/* AI Suggestions Modal */}
       {showAIModal && (
         <div style={{
           position: 'fixed',
@@ -620,7 +696,7 @@ const ProjectDetails = () => {
             padding: isAiLoading ? '0' : '30px'
           }} onClick={(e) => e.stopPropagation()}>
             {isAiLoading ? (
-              <AILoading type="suggestions" />
+              <SimpleAILoading type="suggestions" />
             ) : (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -629,13 +705,7 @@ const ProjectDetails = () => {
                   </h2>
                   <button
                     onClick={() => setShowAIModal(false)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      fontSize: '24px',
-                      cursor: 'pointer',
-                      color: '#718096'
-                    }}
+                    style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#718096' }}
                   >
                     ×
                   </button>
@@ -652,11 +722,8 @@ const ProjectDetails = () => {
                       Here are AI-generated task suggestions based on your project:
                     </p>
                     {aiSuggestions.map((suggestion, index) => (
-                      <motion.div
+                      <div
                         key={index}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.1 }}
                         style={{
                           padding: '15px',
                           background: '#f8fafc',
@@ -683,7 +750,7 @@ const ProjectDetails = () => {
                             ⏱️ Estimated: {suggestion.estimatedHours} hours
                           </div>
                         )}
-                      </motion.div>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -700,6 +767,13 @@ const ProjectDetails = () => {
           </div>
         </div>
       )}
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
