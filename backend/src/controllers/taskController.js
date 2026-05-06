@@ -1,5 +1,6 @@
 import Task from '../models/Task.js';
 import Project from '../models/Project.js';
+import { io } from '../server.js';
 
 export const createTask = async (req, res, next) => {
   try {
@@ -13,7 +14,6 @@ export const createTask = async (req, res, next) => {
       });
     }
     
-    // Check authorization
     const isAdmin = req.user.role === 'admin';
     const isProjectAdmin = project.admin.toString() === req.user._id.toString();
     const isMember = project.members.includes(req.user._id);
@@ -38,6 +38,14 @@ export const createTask = async (req, res, next) => {
     
     await task.populate('assignedTo', 'name email');
     await task.populate('assignedBy', 'name email');
+    
+    // Emit socket event for real-time update
+    const io = req.app.get('io');
+    io.to(`project-${projectId}`).emit('task-created', {
+      task: task,
+      projectId: projectId,
+      message: `New task created: ${title}`
+    });
     
     res.status(201).json({
       success: true,
@@ -85,15 +93,12 @@ export const updateTask = async (req, res, next) => {
     
     const project = await Project.findById(task.project);
     
-    // Authorization
     const isAdmin = req.user.role === 'admin';
     const isProjectAdmin = project.admin.toString() === req.user._id.toString();
     const isAssignedUser = task.assignedTo.toString() === req.user._id.toString();
     
-    // Members can only update status of their assigned tasks
     if (!isAdmin && !isProjectAdmin) {
       if (isAssignedUser && Object.keys(updates).length === 1 && updates.status) {
-        // Member updating only status - allowed
         if (updates.status === 'done') {
           updates.completedAt = new Date();
         }
@@ -105,12 +110,23 @@ export const updateTask = async (req, res, next) => {
       }
     }
     
+    const oldStatus = task.status;
     const updatedTask = await Task.findByIdAndUpdate(
       id,
       updates,
       { new: true, runValidators: true }
     ).populate('assignedTo', 'name email')
      .populate('assignedBy', 'name email');
+    
+    // Emit socket event for real-time update
+    const io = req.app.get('io');
+    io.to(`project-${task.project}`).emit('task-updated', {
+      task: updatedTask,
+      projectId: task.project,
+      oldStatus: oldStatus,
+      newStatus: updates.status || oldStatus,
+      message: `Task updated: ${updatedTask.title}`
+    });
     
     res.json({
       success: true,

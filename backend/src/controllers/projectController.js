@@ -80,7 +80,6 @@ export const addMember = async (req, res, next) => {
       });
     }
     
-    // Check if user is admin
     if (project.admin.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
@@ -108,6 +107,18 @@ export const addMember = async (req, res, next) => {
     
     await User.findByIdAndUpdate(user._id, {
       $push: { projects: project._id }
+    });
+    
+    // Populate member details
+    await project.populate('members', 'name email');
+    const newMember = project.members.find(m => m._id.toString() === user._id.toString());
+    
+    // Emit socket event
+    const io = req.app.get('io');
+    io.to(`project-${project._id}`).emit('member-added', {
+      projectId: project._id,
+      member: newMember,
+      message: `${user.name} joined the project`
     });
     
     res.json({
@@ -169,3 +180,4 @@ export const removeMember = async (req, res, next) => {
     next(error);
   }
 };
+

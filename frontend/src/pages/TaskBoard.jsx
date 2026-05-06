@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { FiCalendar, FiUser, FiFlag } from 'react-icons/fi';
+import { motion } from 'framer-motion';
+import { FiCalendar, FiUser, FiFlag, FiCheckCircle, FiClock } from 'react-icons/fi';
 import { format } from 'date-fns';
+import toast from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const TaskBoard = () => {
   const { user } = useAuth();
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState({ todo: [], in_progress: [], done: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -17,125 +20,176 @@ const TaskBoard = () => {
 
   const fetchMyTasks = async () => {
     try {
-      const response = await axios.get(`${API_URL}/tasks/my-tasks`);
-      setTasks(response.data.tasks);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/tasks/my-tasks`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const grouped = {
+        todo: response.data.tasks.filter(t => t.status === 'todo'),
+        in_progress: response.data.tasks.filter(t => t.status === 'in_progress'),
+        done: response.data.tasks.filter(t => t.status === 'done')
+      };
+      setTasks(grouped);
     } catch (error) {
       console.error('Failed to fetch tasks:', error);
+      toast.error('Failed to load tasks');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpdateStatus = async (taskId, newStatus) => {
+  const handleDragEnd = async (result) => {
+    if (!result.destination) return;
+    
+    const { source, destination, draggableId } = result;
+    
+    if (source.droppableId === destination.droppableId) return;
+    
+    // Update local state optimistically
+    const newTasks = { ...tasks };
+    const [movedTask] = newTasks[source.droppableId].splice(source.index, 1);
+    movedTask.status = destination.droppableId;
+    newTasks[destination.droppableId].splice(destination.index, 0, movedTask);
+    setTasks(newTasks);
+    
+    // Update backend
     try {
-      await axios.put(`${API_URL}/tasks/${taskId}`, { status: newStatus });
-      fetchMyTasks();
+      await axios.put(`${API_URL}/tasks/${draggableId}`, { status: destination.droppableId });
+      toast.success('Task moved successfully!');
+      
+      // Show confetti when task is marked as done
+      if (destination.droppableId === 'done') {
+        localStorage.setItem('justCompleted', 'true');
+        window.dispatchEvent(new Event('storage'));
+      }
     } catch (error) {
-      console.error('Failed to update task:', error);
+      toast.error('Failed to update task status');
+      fetchMyTasks(); // Revert on error
     }
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      todo: '#ef4444',
-      in_progress: '#f59e0b',
-      done: '#10b981'
-    };
-    return colors[status] || '#718096';
-  };
-
   const getPriorityColor = (priority) => {
-    const colors = {
-      low: '#10b981',
-      medium: '#f59e0b',
-      high: '#ef4444',
-      urgent: '#7c3aed'
-    };
+    const colors = { low: '#10b981', medium: '#f59e0b', high: '#ef4444', urgent: '#7c3aed' };
     return colors[priority] || '#718096';
   };
 
-  if (loading) return <div className="container">Loading your tasks...</div>;
+  const columns = [
+    { id: 'todo', title: 'To Do', icon: <FiClock />, color: '#ef4444', bg: '#fee2e2' },
+    { id: 'in_progress', title: 'In Progress', icon: <FiUser />, color: '#f59e0b', bg: '#fed7aa' },
+    { id: 'done', title: 'Done', icon: <FiCheckCircle />, color: '#10b981', bg: '#d1fae5' }
+  ];
+
+  if (loading) return <div style={{ padding: '20px', textAlign: 'center' }}>Loading your tasks...</div>;
 
   return (
-    <div className="container fade-in">
-      <div style={{ marginBottom: '30px' }}>
-        <h1 style={{ color: 'white', marginBottom: '10px' }}>My Tasks</h1>
-        <p style={{ color: 'rgba(255,255,255,0.9)' }}>Tasks assigned to you across all projects</p>
-      </div>
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '30px' }}
+      >
+        <h1 style={{ color: 'white', marginBottom: '10px' }}>My Task Board</h1>
+        <p style={{ color: 'rgba(255,255,255,0.9)' }}>Drag and drop tasks to update status</p>
+      </motion.div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
-        gap: '20px'
-      }}>
-        {tasks.length === 0 ? (
-          <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
-            <p style={{ color: '#718096' }}>No tasks assigned to you yet.</p>
-          </div>
-        ) : (
-          tasks.map((task) => (
-            <div key={task._id} className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-                <h3 style={{ color: '#2d3748' }}>{task.title}</h3>
-                <span style={{
-                  display: 'inline-block',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  background: getPriorityColor(task.priority) + '20',
-                  color: getPriorityColor(task.priority)
-                }}>
-                  {task.priority.toUpperCase()}
-                </span>
-              </div>
-              
-              <p style={{ color: '#718096', marginBottom: '15px', fontSize: '14px' }}>
-                {task.description || 'No description'}
-              </p>
-              
-              <div style={{ display: 'flex', gap: '15px', marginBottom: '15px', fontSize: '13px', color: '#718096' }}>
-                <span><FiUser size={14} style={{ marginRight: '5px' }} /> {task.project?.name}</span>
-                <span><FiCalendar size={14} style={{ marginRight: '5px' }} /> {format(new Date(task.dueDate), 'MMM dd, yyyy')}</span>
-                <span><FiFlag size={14} style={{ marginRight: '5px' }} /> Priority</span>
-              </div>
-              
-              <div>
-                <label style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', display: 'block' }}>Status</label>
-                <select
-                  value={task.status}
-                  onChange={(e) => handleUpdateStatus(task._id, e.target.value)}
+      <DragDropContext onDragEnd={handleDragEnd}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '20px'
+        }}>
+          {columns.map(column => (
+            <Droppable key={column.id} droppableId={column.id}>
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className="card"
                   style={{
-                    width: '100%',
-                    padding: '8px',
-                    borderRadius: '6px',
-                    border: `2px solid ${getStatusColor(task.status)}`,
-                    fontSize: '14px',
-                    cursor: 'pointer'
+                    background: '#f8fafc',
+                    borderRadius: '16px',
+                    padding: '20px',
+                    minHeight: '500px',
+                    maxHeight: '70vh',
+                    overflowY: 'auto',
+                    border: snapshot.isDraggingOver ? `2px solid ${column.color}` : '2px solid transparent'
                   }}
                 >
-                  <option value="todo">To Do</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="done">Done</option>
-                </select>
-              </div>
-              
-              {task.status === 'done' && (
-                <div style={{
-                  marginTop: '12px',
-                  padding: '8px',
-                  background: '#d1fae5',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  color: '#065f46'
-                }}>
-                  ✅ Completed on {task.completedAt ? format(new Date(task.completedAt), 'MMM dd, yyyy') : 'recently'}
+                  <h3 style={{
+                    marginBottom: '20px',
+                    color: column.color,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    paddingBottom: '10px',
+                    borderBottom: `2px solid ${column.color}`
+                  }}>
+                    {column.icon} {column.title} ({tasks[column.id].length})
+                  </h3>
+                  
+                  {tasks[column.id].map((task, index) => (
+                    <Draggable key={task._id} draggableId={task._id} index={index}>
+                      {(provided, snapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          style={{
+                            ...provided.draggableProps.style,
+                            background: 'white',
+                            padding: '15px',
+                            borderRadius: '12px',
+                            marginBottom: '12px',
+                            boxShadow: snapshot.isDragging ? '0 4px 12px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.1)',
+                            cursor: 'grab',
+                            transition: 'all 0.3s'
+                          }}
+                          whileHover={{ scale: 1.02 }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
+                            <h4 style={{ fontSize: '14px', fontWeight: '600' }}>{task.title}</h4>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '12px',
+                              fontSize: '10px',
+                              fontWeight: '600',
+                              background: getPriorityColor(task.priority) + '20',
+                              color: getPriorityColor(task.priority)
+                            }}>
+                              {task.priority}
+                            </span>
+                          </div>
+                          
+                          <p style={{ fontSize: '12px', color: '#718096', marginBottom: '10px' }}>
+                            {task.description?.substring(0, 80)}
+                          </p>
+                          
+                          <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#718096' }}>
+                            <span><FiCalendar /> {format(new Date(task.dueDate), 'MMM dd')}</span>
+                            <span><FiUser /> {task.assignedTo?.name}</span>
+                          </div>
+                          
+                          {task.project && (
+                            <div style={{
+                              marginTop: '8px',
+                              fontSize: '10px',
+                              color: '#667eea'
+                            }}>
+                              📁 {task.project.name}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
                 </div>
               )}
-            </div>
-          ))
-        )}
-      </div>
+            </Droppable>
+          ))}
+        </div>
+      </DragDropContext>
     </div>
   );
 };

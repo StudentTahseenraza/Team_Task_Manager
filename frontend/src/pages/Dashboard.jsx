@@ -2,10 +2,19 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { FiCheckCircle, FiClock, FiAlertCircle, FiCalendar, FiTrendingUp, FiFolder, FiPlus } from 'react-icons/fi';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  FiCheckCircle, FiClock, FiAlertCircle, FiTrendingUp, 
+  FiFolder, FiPlus, FiUsers, FiActivity, FiCalendar,
+  FiBarChart2, FiPieChart
+} from 'react-icons/fi';
 import { format, isBefore } from 'date-fns';
 import toast from 'react-hot-toast';
+import Confetti from 'react-confetti';
+import { Line, Doughnut, Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, BarElement } from 'chart.js';
+
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, PointElement, LineElement, BarElement);
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -14,11 +23,18 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [newProject, setNewProject] = useState({ name: '', description: '' });
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
     fetchDashboardStats();
+    
+    // Check if user just completed a task (show confetti)
+    const justCompleted = localStorage.getItem('justCompleted');
+    if (justCompleted === 'true') {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+      localStorage.removeItem('justCompleted');
+    }
   }, []);
 
   const fetchDashboardStats = async () => {
@@ -36,298 +52,260 @@ const Dashboard = () => {
     }
   };
 
-  const handleCreateProject = async (e) => {
-    e.preventDefault();
-    try {
-      const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/projects`, newProject, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      toast.success('Project created successfully!');
-      setShowProjectModal(false);
-      setNewProject({ name: '', description: '' });
-      fetchDashboardStats(); // Refresh stats
-      navigate('/projects');
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to create project');
-    }
-  };
-
   if (loading) {
     return (
-      <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '60vh'
+      }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', marginBottom: '10px' }}>📊</div>
-          <div style={{ color: 'white' }}>Loading dashboard...</div>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>📊</div>
+          <div style={{ color: 'white', fontSize: '18px' }}>Loading your workspace...</div>
         </div>
       </div>
     );
   }
 
-  const statusData = [
-    { name: 'To Do', value: stats?.tasksByStatus?.todo || 0, color: '#ef4444' },
-    { name: 'In Progress', value: stats?.tasksByStatus?.in_progress || 0, color: '#f59e0b' },
-    { name: 'Done', value: stats?.tasksByStatus?.done || 0, color: '#10b981' }
-  ];
+  // Chart configurations
+  const statusChartData = {
+    labels: ['To Do', 'In Progress', 'Done'],
+    datasets: [{
+      data: [
+        stats?.tasksByStatus?.todo || 0,
+        stats?.tasksByStatus?.in_progress || 0,
+        stats?.tasksByStatus?.done || 0
+      ],
+      backgroundColor: ['#ef4444', '#f59e0b', '#10b981'],
+      borderWidth: 0
+    }]
+  };
 
-  const priorityData = [
-    { name: 'Low', value: stats?.tasksByPriority?.low || 0, color: '#10b981' },
-    { name: 'Medium', value: stats?.tasksByPriority?.medium || 0, color: '#f59e0b' },
-    { name: 'High', value: stats?.tasksByPriority?.high || 0, color: '#ef4444' },
-    { name: 'Urgent', value: stats?.tasksByPriority?.urgent || 0, color: '#7c3aed' }
-  ];
+  const priorityChartData = {
+    labels: ['Low', 'Medium', 'High', 'Urgent'],
+    datasets: [{
+      data: [
+        stats?.tasksByPriority?.low || 0,
+        stats?.tasksByPriority?.medium || 0,
+        stats?.tasksByPriority?.high || 0,
+        stats?.tasksByPriority?.urgent || 0
+      ],
+      backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#7c3aed'],
+      borderWidth: 0
+    }]
+  };
+
+  const completionData = {
+    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+    datasets: [{
+      label: 'Tasks Completed',
+      data: [12, 19, 15, 27],
+      borderColor: '#667eea',
+      backgroundColor: 'rgba(102, 126, 234, 0.1)',
+      tension: 0.4,
+      fill: true
+    }]
+  };
 
   return (
-    <div className="container fade-in">
-      <div style={{ marginBottom: '30px' }}>
-        <h1 style={{ color: 'white', marginBottom: '10px' }}>Welcome back, {user?.name}! 👋</h1>
-        <p style={{ color: 'rgba(255,255,255,0.9)' }}>Here's what's happening with your projects</p>
-      </div>
+    <div style={{ padding: '20px', maxWidth: '1400px', margin: '0 auto' }}>
+      {showConfetti && <Confetti />}
+      
+      {/* Welcome Section */}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '30px' }}
+      >
+        <h1 style={{ color: 'white', fontSize: '32px', marginBottom: '10px' }}>
+          Welcome back, {user?.name}! 👋
+        </h1>
+        <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: '16px' }}>
+          {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}! 
+          Here's your productivity overview
+        </p>
+      </motion.div>
 
-      {/* Stats Cards */}
+      {/* Stats Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
         gap: '20px',
         marginBottom: '30px'
       }}>
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ color: '#718096', fontSize: '14px' }}>Total Projects</p>
-              <h2 style={{ fontSize: '36px', marginTop: '10px' }}>{stats?.totalProjects || 0}</h2>
-            </div>
-            <FiFolder size={48} color="#667eea" />
-          </div>
-        </div>
-
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ color: '#718096', fontSize: '14px' }}>Total Tasks</p>
-              <h2 style={{ fontSize: '36px', marginTop: '10px' }}>{stats?.totalTasks || 0}</h2>
-            </div>
-            <FiCheckCircle size={48} color="#10b981" />
-          </div>
-        </div>
-
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ color: '#718096', fontSize: '14px' }}>Overdue Tasks</p>
-              <h2 style={{ fontSize: '36px', marginTop: '10px', color: '#ef4444' }}>{stats?.overdueTasks || 0}</h2>
-            </div>
-            <FiAlertCircle size={48} color="#ef4444" />
-          </div>
-        </div>
-
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ color: '#718096', fontSize: '14px' }}>Completion Rate</p>
-              <h2 style={{ fontSize: '36px', marginTop: '10px' }}>{stats?.completionRate || 0}%</h2>
-            </div>
-            <FiTrendingUp size={48} color="#667eea" />
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div style={{ marginBottom: '30px' }}>
-        <button
-          onClick={() => setShowProjectModal(true)}
-          className="btn btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-        >
-          <FiPlus /> Create New Project
-        </button>
-      </div>
-
-      {/* Recent Projects Section */}
-      {stats?.projects && stats.projects.length > 0 && (
-        <div className="card" style={{ marginBottom: '30px' }}>
-          <h3 style={{ marginBottom: '20px' }}>📁 Your Projects</h3>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-            gap: '15px'
-          }}>
-            {stats.projects.slice(0, 3).map((project) => (
-              <div
-                key={project._id}
-                onClick={() => navigate(`/projects/${project._id}`)}
-                style={{
-                  padding: '15px',
-                  background: '#f8fafc',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  border: '1px solid #e2e8f0'
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                <h4 style={{ marginBottom: '8px', color: '#2d3748' }}>{project.name}</h4>
-                <p style={{ fontSize: '13px', color: '#718096' }}>{project.description || 'No description'}</p>
+        {[
+          { label: 'Total Projects', value: stats?.totalProjects || 0, icon: <FiFolder />, color: '#667eea', bg: 'rgba(102, 126, 234, 0.1)' },
+          { label: 'Total Tasks', value: stats?.totalTasks || 0, icon: <FiCheckCircle />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+          { label: 'Completed Tasks', value: stats?.tasksByStatus?.done || 0, icon: <FiActivity />, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+          { label: 'Completion Rate', value: `${stats?.completionRate || 0}%`, icon: <FiTrendingUp />, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' }
+        ].map((stat, idx) => (
+          <motion.div
+            key={idx}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: idx * 0.1 }}
+            className="card"
+            style={{
+              background: 'white',
+              borderRadius: '20px',
+              padding: '20px',
+              transition: 'transform 0.3s'
+            }}
+            whileHover={{ y: -5 }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <p style={{ color: '#718096', fontSize: '14px', marginBottom: '8px' }}>{stat.label}</p>
+                <h2 style={{ fontSize: '36px', fontWeight: 'bold', color: stat.color }}>{stat.value}</h2>
               </div>
-            ))}
-          </div>
-          {stats.projects.length > 3 && (
-            <button
-              onClick={() => navigate('/projects')}
-              style={{
-                marginTop: '15px',
-                background: 'none',
-                border: 'none',
-                color: '#667eea',
-                cursor: 'pointer',
-                fontSize: '14px'
-              }}
-            >
-              View all {stats.projects.length} projects →
-            </button>
-          )}
-        </div>
-      )}
+              <div style={{
+                width: '60px',
+                height: '60px',
+                background: stat.bg,
+                borderRadius: '15px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '28px',
+                color: stat.color
+              }}>
+                {stat.icon}
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
 
-      {/* Charts */}
+      {/* Charts Section */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
         gap: '20px',
         marginBottom: '30px'
       }}>
-        <div className="card">
-          <h3 style={{ marginBottom: '20px' }}>Tasks by Status</h3>
-          {stats?.totalTasks > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={statusData.filter(s => s.value > 0)}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {statusData.filter(s => s.value > 0).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#718096' }}>
-              No tasks yet. Create tasks in your projects!
-            </div>
-          )}
-        </div>
+        <motion.div
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="card"
+          style={{ borderRadius: '20px', padding: '25px' }}
+        >
+          <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <FiPieChart /> Task Distribution by Status
+          </h3>
+          <div style={{ height: '300px' }}>
+            <Doughnut data={statusChartData} options={{ responsive: true, maintainAspectRatio: false }} />
+          </div>
+        </motion.div>
 
-        <div className="card">
-          <h3 style={{ marginBottom: '20px' }}>Tasks by Priority</h3>
-          {stats?.totalTasks > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={priorityData.filter(p => p.value > 0)}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="value" fill="#667eea">
-                  {priorityData.filter(p => p.value > 0).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#718096' }}>
-              No tasks yet to show priority distribution.
-            </div>
-          )}
-        </div>
+        <motion.div
+          initial={{ opacity: 0, x: 30 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="card"
+          style={{ borderRadius: '20px', padding: '25px' }}
+        >
+          <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <FiBarChart2 /> Task Distribution by Priority
+          </h3>
+          <div style={{ height: '300px' }}>
+            <Bar 
+              data={priorityChartData} 
+              options={{ 
+                responsive: true, 
+                maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } }
+              }} 
+            />
+          </div>
+        </motion.div>
       </div>
 
-      {/* Tasks Per User */}
-      {stats?.tasksPerUser && stats.tasksPerUser.length > 0 && (
-        <div className="card">
-          <h3 style={{ marginBottom: '20px' }}>👥 Tasks Per Team Member</h3>
+      {/* Recent Activity */}
+      {stats?.recentTasks && stats.recentTasks.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card"
+          style={{ borderRadius: '20px', padding: '25px' }}
+        >
+          <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <FiActivity /> Recent Activity
+          </h3>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Member</th>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Tasks Assigned</th>
+                  <th style={{ textAlign: 'left', padding: '12px' }}>Task</th>
+                  <th style={{ textAlign: 'left', padding: '12px' }}>Project</th>
                   <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
+                  <th style={{ textAlign: 'left', padding: '12px' }}>Due Date</th>
                 </tr>
               </thead>
               <tbody>
-                {stats.tasksPerUser.map((user, index) => (
-                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px' }}>{user.name}</td>
-                    <td style={{ padding: '12px' }}>{user.count}</td>
+                {stats.recentTasks.map((task, idx) => (
+                  <motion.tr
+                    key={task._id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: idx * 0.05 }}
+                    style={{ borderBottom: '1px solid #e2e8f0', cursor: 'pointer' }}
+                    onClick={() => navigate(`/projects/${task.project?._id}`)}
+                  >
+                    <td style={{ padding: '12px' }}>{task.title}</td>
+                    <td style={{ padding: '12px' }}>{task.project?.name}</td>
                     <td style={{ padding: '12px' }}>
-                      <div style={{
-                        width: `${Math.min((user.count / stats.totalTasks) * 100, 100)}%`,
-                        height: '6px',
-                        background: '#667eea',
-                        borderRadius: '3px'
-                      }} />
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        background: task.status === 'todo' ? '#fee2e2' : task.status === 'in_progress' ? '#fed7aa' : '#d1fae5',
+                        color: task.status === 'todo' ? '#ef4444' : task.status === 'in_progress' ? '#f59e0b' : '#10b981'
+                      }}>
+                        {task.status === 'todo' ? 'To Do' : task.status === 'in_progress' ? 'In Progress' : 'Done'}
+                      </span>
                     </td>
-                  </tr>
+                    <td style={{ padding: '12px' }}>
+                      <span style={{
+                        color: isBefore(new Date(task.dueDate), new Date()) && task.status !== 'done' ? '#ef4444' : '#718096'
+                      }}>
+                        {format(new Date(task.dueDate), 'MMM dd, yyyy')}
+                      </span>
+                    </td>
+                  </motion.tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Create Project Modal */}
-      {showProjectModal && (
-        <div style={{
+      {/* Quick Action Button */}
+      <motion.button
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => navigate('/projects')}
+        style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0,0,0,0.5)',
+          bottom: '30px',
+          right: '30px',
+          width: '60px',
+          height: '60px',
+          borderRadius: '30px',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          border: 'none',
+          cursor: 'pointer',
+          boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          zIndex: 1000
-        }} onClick={() => setShowProjectModal(false)}>
-          <div className="card" style={{ maxWidth: '500px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '20px' }}>Create New Project</h2>
-            <form onSubmit={handleCreateProject}>
-              <div className="form-group">
-                <label>Project Name *</label>
-                <input
-                  type="text"
-                  placeholder="Enter project name"
-                  value={newProject.name}
-                  onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Description (Optional)</label>
-                <textarea
-                  rows="3"
-                  placeholder="Project description"
-                  value={newProject.description}
-                  onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn" onClick={() => setShowProjectModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create Project</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          fontSize: '24px'
+        }}
+      >
+        <FiPlus />
+      </motion.button>
     </div>
   );
 };
