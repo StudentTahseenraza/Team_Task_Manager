@@ -10,7 +10,7 @@ export const getDashboardStats = async (req, res, next) => {
         { admin: req.user._id },
         { members: req.user._id }
       ]
-    }).select('_id');
+    }).select('_id name');
     
     const projectIds = userProjects.map(p => p._id);
     
@@ -19,11 +19,24 @@ export const getDashboardStats = async (req, res, next) => {
       project: { $in: projectIds }
     });
     
+    // Total projects count
+    const totalProjects = userProjects.length;
+    
     // Tasks by status
     const tasksByStatus = await Task.aggregate([
       { $match: { project: { $in: projectIds } } },
       { $group: { _id: '$status', count: { $sum: 1 } } }
     ]);
+    
+    // Format status counts
+    const statusCounts = {
+      todo: 0,
+      in_progress: 0,
+      done: 0
+    };
+    tasksByStatus.forEach(item => {
+      statusCounts[item._id] = item.count;
+    });
     
     // Tasks per user
     const tasksPerUser = await Task.aggregate([
@@ -31,10 +44,10 @@ export const getDashboardStats = async (req, res, next) => {
       { $group: { _id: '$assignedTo', count: { $sum: 1 } } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'user' } },
       { $unwind: '$user' },
-      { $project: { name: '$user.name', count: 1 } }
+      { $project: { name: '$user.name', email: '$user.email', count: 1 } }
     ]);
     
-    // Overdue tasks
+    // Overdue tasks (tasks with due date < today and not done)
     const now = new Date();
     const overdueTasks = await Task.countDocuments({
       project: { $in: projectIds },
@@ -43,10 +56,7 @@ export const getDashboardStats = async (req, res, next) => {
     });
     
     // Completion rate
-    const completedTasks = await Task.countDocuments({
-      project: { $in: projectIds },
-      status: 'done'
-    });
+    const completedTasks = statusCounts.done;
     const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
     
     // Priority breakdown
@@ -54,6 +64,16 @@ export const getDashboardStats = async (req, res, next) => {
       { $match: { project: { $in: projectIds } } },
       { $group: { _id: '$priority', count: { $sum: 1 } } }
     ]);
+    
+    const priorityCounts = {
+      low: 0,
+      medium: 0,
+      high: 0,
+      urgent: 0
+    };
+    tasksByPriority.forEach(item => {
+      priorityCounts[item._id] = item.count;
+    });
     
     // Recent tasks
     const recentTasks = await Task.find({ project: { $in: projectIds } })
@@ -66,21 +86,18 @@ export const getDashboardStats = async (req, res, next) => {
       success: true,
       stats: {
         totalTasks,
-        tasksByStatus: tasksByStatus.reduce((acc, curr) => {
-          acc[curr._id] = curr.count;
-          return acc;
-        }, {}),
+        totalProjects,  // Added this
+        tasksByStatus: statusCounts,
         tasksPerUser,
         overdueTasks,
         completionRate: Math.round(completionRate),
-        tasksByPriority: tasksByPriority.reduce((acc, curr) => {
-          acc[curr._id] = curr.count;
-          return acc;
-        }, {}),
-        recentTasks
+        tasksByPriority: priorityCounts,
+        recentTasks,
+        projects: userProjects  // Added projects list
       }
     });
   } catch (error) {
+    console.error('Dashboard error:', error);
     next(error);
   }
 };

@@ -14,6 +14,8 @@ import projectRoutes from './routes/projectRoutes.js';
 import taskRoutes from './routes/taskRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
+import { initializeDefaultAdmin } from './controllers/authController.js';
+
 
 
 const app = express();
@@ -51,12 +53,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Database connection
+// Database connection and initialization
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('✅ MongoDB connected'))
+.then(async () => {
+  console.log('✅ MongoDB connected');
+  // Initialize default admin user
+  await initializeDefaultAdmin();
+})
 .catch((err) => console.error('❌ MongoDB connection error:', err));
 
 const PORT = process.env.PORT || 5000;

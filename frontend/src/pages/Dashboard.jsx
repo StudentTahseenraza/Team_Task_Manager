@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { FiCheckCircle, FiClock, FiAlertCircle, FiCalendar, FiTrendingUp } from 'react-icons/fi';
-import { format, isAfter, isBefore } from 'date-fns';
+import { FiCheckCircle, FiClock, FiAlertCircle, FiCalendar, FiTrendingUp, FiFolder, FiPlus } from 'react-icons/fi';
+import { format, isBefore } from 'date-fns';
+import toast from 'react-hot-toast';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const Dashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [newProject, setNewProject] = useState({ name: '', description: '' });
 
   useEffect(() => {
     fetchDashboardStats();
@@ -18,17 +23,45 @@ const Dashboard = () => {
 
   const fetchDashboardStats = async () => {
     try {
-      const response = await axios.get(`${API_URL}/dashboard/stats`);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/dashboard/stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setStats(response.data.stats);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/projects`, newProject, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Project created successfully!');
+      setShowProjectModal(false);
+      setNewProject({ name: '', description: '' });
+      fetchDashboardStats(); // Refresh stats
+      navigate('/projects');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to create project');
+    }
+  };
+
   if (loading) {
-    return <div className="container">Loading dashboard...</div>;
+    return (
+      <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '24px', marginBottom: '10px' }}>📊</div>
+          <div style={{ color: 'white' }}>Loading dashboard...</div>
+        </div>
+      </div>
+    );
   }
 
   const statusData = [
@@ -61,6 +94,16 @@ const Dashboard = () => {
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
+              <p style={{ color: '#718096', fontSize: '14px' }}>Total Projects</p>
+              <h2 style={{ fontSize: '36px', marginTop: '10px' }}>{stats?.totalProjects || 0}</h2>
+            </div>
+            <FiFolder size={48} color="#667eea" />
+          </div>
+        </div>
+
+        <div className="card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
               <p style={{ color: '#718096', fontSize: '14px' }}>Total Tasks</p>
               <h2 style={{ fontSize: '36px', marginTop: '10px' }}>{stats?.totalTasks || 0}</h2>
             </div>
@@ -89,99 +132,199 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Quick Actions */}
+      <div style={{ marginBottom: '30px' }}>
+        <button
+          onClick={() => setShowProjectModal(true)}
+          className="btn btn-primary"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+        >
+          <FiPlus /> Create New Project
+        </button>
+      </div>
+
+      {/* Recent Projects Section */}
+      {stats?.projects && stats.projects.length > 0 && (
+        <div className="card" style={{ marginBottom: '30px' }}>
+          <h3 style={{ marginBottom: '20px' }}>📁 Your Projects</h3>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+            gap: '15px'
+          }}>
+            {stats.projects.slice(0, 3).map((project) => (
+              <div
+                key={project._id}
+                onClick={() => navigate(`/projects/${project._id}`)}
+                style={{
+                  padding: '15px',
+                  background: '#f8fafc',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s',
+                  border: '1px solid #e2e8f0'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                <h4 style={{ marginBottom: '8px', color: '#2d3748' }}>{project.name}</h4>
+                <p style={{ fontSize: '13px', color: '#718096' }}>{project.description || 'No description'}</p>
+              </div>
+            ))}
+          </div>
+          {stats.projects.length > 3 && (
+            <button
+              onClick={() => navigate('/projects')}
+              style={{
+                marginTop: '15px',
+                background: 'none',
+                border: 'none',
+                color: '#667eea',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              View all {stats.projects.length} projects →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Charts */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
         gap: '20px',
         marginBottom: '30px'
       }}>
         <div className="card">
           <h3 style={{ marginBottom: '20px' }}>Tasks by Status</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={statusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {statusData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+          {stats?.totalTasks > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={statusData.filter(s => s.value > 0)}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={80}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {statusData.filter(s => s.value > 0).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#718096' }}>
+              No tasks yet. Create tasks in your projects!
+            </div>
+          )}
         </div>
 
         <div className="card">
           <h3 style={{ marginBottom: '20px' }}>Tasks by Priority</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={priorityData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#667eea">
-                {priorityData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          {stats?.totalTasks > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={priorityData.filter(p => p.value > 0)}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#667eea">
+                  {priorityData.filter(p => p.value > 0).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', color: '#718096' }}>
+              No tasks yet to show priority distribution.
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Recent Tasks */}
-      {stats?.recentTasks && stats.recentTasks.length > 0 && (
+      {/* Tasks Per User */}
+      {stats?.tasksPerUser && stats.tasksPerUser.length > 0 && (
         <div className="card">
-          <h3 style={{ marginBottom: '20px' }}>Recent Tasks</h3>
+          <h3 style={{ marginBottom: '20px' }}>👥 Tasks Per Team Member</h3>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Task</th>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Project</th>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Assigned To</th>
-                  <th style={{ textAlign: 'left', padding: '12px' }}>Due Date</th>
+                  <th style={{ textAlign: 'left', padding: '12px' }}>Member</th>
+                  <th style={{ textAlign: 'left', padding: '12px' }}>Tasks Assigned</th>
                   <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {stats.recentTasks.map((task) => (
-                  <tr key={task._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px' }}>{task.title}</td>
-                    <td style={{ padding: '12px' }}>{task.project?.name}</td>
-                    <td style={{ padding: '12px' }}>{task.assignedTo?.name}</td>
+                {stats.tasksPerUser.map((user, index) => (
+                  <tr key={index} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px' }}>{user.name}</td>
+                    <td style={{ padding: '12px' }}>{user.count}</td>
                     <td style={{ padding: '12px' }}>
-                      <span style={{
-                        color: isBefore(new Date(task.dueDate), new Date()) && task.status !== 'done' ? '#ef4444' : '#718096'
-                      }}>
-                        {format(new Date(task.dueDate), 'MMM dd, yyyy')}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{
-                        display: 'inline-block',
-                        padding: '4px 12px',
-                        borderRadius: '20px',
-                        fontSize: '12px',
-                        fontWeight: '600',
-                        background: task.status === 'todo' ? '#fee2e2' : task.status === 'in_progress' ? '#fed7aa' : '#d1fae5',
-                        color: task.status === 'todo' ? '#ef4444' : task.status === 'in_progress' ? '#f59e0b' : '#10b981'
-                      }}>
-                        {task.status === 'todo' ? 'To Do' : task.status === 'in_progress' ? 'In Progress' : 'Done'}
-                      </span>
+                      <div style={{
+                        width: `${Math.min((user.count / stats.totalTasks) * 100, 100)}%`,
+                        height: '6px',
+                        background: '#667eea',
+                        borderRadius: '3px'
+                      }} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Create Project Modal */}
+      {showProjectModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }} onClick={() => setShowProjectModal(false)}>
+          <div className="card" style={{ maxWidth: '500px', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginBottom: '20px' }}>Create New Project</h2>
+            <form onSubmit={handleCreateProject}>
+              <div className="form-group">
+                <label>Project Name *</label>
+                <input
+                  type="text"
+                  placeholder="Enter project name"
+                  value={newProject.name}
+                  onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Description (Optional)</label>
+                <textarea
+                  rows="3"
+                  placeholder="Project description"
+                  value={newProject.description}
+                  onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn" onClick={() => setShowProjectModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Create Project</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
